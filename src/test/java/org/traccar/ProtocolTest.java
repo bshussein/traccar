@@ -32,6 +32,8 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
+
 
 public class ProtocolTest extends BaseTest {
 
@@ -347,5 +349,39 @@ public class ProtocolTest extends BaseTest {
         assertInstanceOf(ByteBuf.class, object, "not a buffer");
         assertEquals(ByteBufUtil.hexDump(expected), ByteBufUtil.hexDump((ByteBuf) object));
     }
+    @Test
+    public void testLatitudeLongitudeValidation() {
+    // Valid Latitude and Longitude
+    double validLat = 45.0;
+    double validLon = 90.0;
+    assertTrue(isValidLatitude(validLat), "Latitude within valid range failed");
+    assertTrue(isValidLongitude(validLon), "Longitude within valid range failed");
+
+    // Boundary Values
+    assertTrue(isValidLatitude(-90.0), "Lower boundary latitude failed");
+    assertTrue(isValidLatitude(90.0), "Upper boundary latitude failed");
+    assertTrue(isValidLongitude(-180.0), "Lower boundary longitude failed");
+    assertTrue(isValidLongitude(180.0), "Upper boundary longitude failed");
+
+    // Invalid Latitude
+    double invalidLat1 = -91.0;
+    double invalidLat2 = 91.0;
+    assertFalse(isValidLatitude(invalidLat1), "Latitude below valid range passed");
+    assertFalse(isValidLatitude(invalidLat2), "Latitude above valid range passed");
+
+    // Invalid Longitude
+    double invalidLon1 = -181.0;
+    double invalidLon2 = 181.0;
+    assertFalse(isValidLongitude(invalidLon1), "Longitude below valid range passed");
+    assertFalse(isValidLongitude(invalidLon2), "Longitude above valid range passed");
+}
+
+private boolean isValidLatitude(double latitude) {
+    return latitude >= -90 && latitude <= 90;
+}
+
+private boolean isValidLongitude(double longitude) {
+    return longitude >= -180 && longitude <= 180;
+}
 
 }
