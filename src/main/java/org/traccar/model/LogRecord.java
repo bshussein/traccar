@@ -85,4 +85,6 @@ public class LogRecord {
         this.data = data;
     }
 
+    public void getMessage() {
+    }
 }

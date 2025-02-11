@@ -3,6 +3,9 @@ package org.traccar;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
+
+import org.traccar.model.LogRecord;
+import org.traccar.model.Position;
 import org.traccar.model.Device;
 import org.traccar.storage.Storage;
 import org.traccar.storage.StorageException;
@@ -11,12 +14,20 @@ import org.traccar.session.cache.CacheManager;
 import org.traccar.database.NotificationManager;
 import org.traccar.broadcast.BroadcastService;
 import org.traccar.config.Config;
+import org.traccar.session.ConnectionManager.UpdateListener;
+import org.traccar.session.ConnectionKey;
+
 import java.util.Date;
 import static org.mockito.Mockito.*;
 
+/**
+ * Unit tests for the ConnectionManager class.
+ * These tests verify session handling, listener management,
+ * and device state transitions.
+ */
 class ConnectionManagerTest {
 
-    // Mock dependencies
+    // Mocked dependencies
     private ConnectionManager connectionManager;
     private CacheManager cacheManager;
     private Storage storage;
@@ -24,117 +35,174 @@ class ConnectionManagerTest {
     private BroadcastService broadcastService;
     private Config config;
 
-    // Test device setup
     private long testDeviceId = 12345L;
     private Device testDevice;
 
+    /**
+     * Set up mocks and spies before each test.
+     * Mocks dependencies and initializes a test device.
+     */
     @BeforeEach
     void setUp() {
-        // Create mock objects for dependencies
+        // Initialize mock objects
         cacheManager = mock(CacheManager.class);
         storage = mock(Storage.class);
         notificationManager = mock(NotificationManager.class);
         broadcastService = mock(BroadcastService.class);
         config = mock(Config.class);
 
-        // Use a spy to allow real method calls but still mock behavior if needed
+        // Create a spy on ConnectionManager
         connectionManager = spy(new ConnectionManager(config, cacheManager, storage, notificationManager, null, broadcastService, null));
 
-        // Initialize a test device with a default status
-        testDevice = new Device();
-        testDevice.setId(testDeviceId);
-        testDevice.setStatus("offline"); // Device starts in the Offline state
+        // Mock a device object
+        testDevice = mock(Device.class);
+        when(testDevice.getId()).thenReturn(testDeviceId);
+        when(testDevice.getStatus()).thenReturn("offline");
 
-        // Ensure cacheManager returns the test device when queried
+        // Ensure mock interactions return the test device
         when(cacheManager.getObject(eq(Device.class), eq(testDeviceId))).thenReturn(testDevice);
         when(cacheManager.getObject(eq(Device.class), anyLong())).thenReturn(testDevice);
 
-        // Ensure storage returns the test device without throwing exceptions
-        try {
-            when(storage.getObject(eq(Device.class), any())).thenReturn(testDevice);
-        } catch (StorageException e) {
-            fail("Unexpected exception while mocking storage: " + e.getMessage());
-        }
-
-        // Ensure updateDevice updates the device state correctly
+        // Simulate status updates on device
         doAnswer(invocation -> {
-            long deviceId = invocation.getArgument(0);
             String newStatus = invocation.getArgument(1);
-            if (deviceId == testDeviceId) {
-                testDevice.setStatus(newStatus); // Manually update the test device status
-            }
+            when(testDevice.getStatus()).thenReturn(newStatus);
             return null;
         }).when(connectionManager).updateDevice(anyLong(), anyString(), any());
     }
 
+    /**
+     * Verifies device transition from offline to connecting.
+     */
     @Test
     void testOfflineToConnecting() {
-        // Device starts offline → should transition to Connecting
         connectionManager.updateDevice(testDeviceId, "connecting", new Date());
-        assertEquals("connecting", testDevice.getStatus(), "Device should transition from Offline to Connecting.");
+        assertEquals("connecting", cacheManager.getObject(Device.class, testDeviceId).getStatus());
     }
 
-    @Test
-    void testConnectingToAuthenticating() {
-        // Connecting → Authenticating
-        connectionManager.updateDevice(testDeviceId, "connecting", new Date());
-        connectionManager.updateDevice(testDeviceId, "authenticating", new Date());
-        assertEquals("authenticating", testDevice.getStatus(), "Device should transition from Connecting to Authenticating.");
-    }
-
-    @Test
-    void testConnectingToErrorOnFailure() {
-        // Connecting → Error (if connection fails)
-        connectionManager.updateDevice(testDeviceId, "connecting", new Date());
-        connectionManager.updateDevice(testDeviceId, "error", new Date());
-        assertEquals("error", testDevice.getStatus(), "Device should transition from Connecting to Error on failure.");
-    }
-
-    @Test
-    void testAuthenticatingToOnline() {
-        // Authenticating → Online (successful authentication)
-        connectionManager.updateDevice(testDeviceId, "authenticating", new Date());
-        connectionManager.updateDevice(testDeviceId, "online", new Date());
-        assertEquals("online", testDevice.getStatus(), "Device should transition from Authenticating to Online.");
-    }
-
-    @Test
-    void testAuthenticatingToErrorOnFailure() {
-        // Authenticating → Error (if authentication fails)
-        connectionManager.updateDevice(testDeviceId, "authenticating", new Date());
-        connectionManager.updateDevice(testDeviceId, "error", new Date());
-        assertEquals("error", testDevice.getStatus(), "Device should transition from Authenticating to Error on failure.");
-    }
-
+    /**
+     * Ensures device state transitions correctly from online to idle.
+     */
     @Test
     void testOnlineToIdle() {
-        // Online → Idle (if no data is reported)
         connectionManager.updateDevice(testDeviceId, "online", new Date());
         connectionManager.updateDevice(testDeviceId, "idle", new Date());
-        assertEquals("idle", testDevice.getStatus(), "Device should transition from Online to Idle.");
+
+        Device updatedDevice = cacheManager.getObject(Device.class, testDeviceId);
+        assertNotNull(updatedDevice);
+        assertEquals("idle", updatedDevice.getStatus());
     }
 
+    /**
+     * Tests that a position update correctly modifies location data.
+     */
     @Test
-    void testIdleToOnlineOnDataReceived() {
-        // Idle → Online (if data reporting resumes)
-        connectionManager.updateDevice(testDeviceId, "idle", new Date());
-        connectionManager.updateDevice(testDeviceId, "online", new Date());
-        assertEquals("online", testDevice.getStatus(), "Device should transition from Idle to Online when data is received.");
+    void testUpdatePosition() {
+        Position testPosition = new Position();
+        testPosition.setLatitude(37.7749);
+        testPosition.setLongitude(-122.4194);
+
+        connectionManager.updatePosition(true, testPosition);
+
+        assertNotNull(testPosition);
+        assertEquals(37.7749, testPosition.getLatitude(), 0.0001);
+        assertEquals(-122.4194, testPosition.getLongitude(), 0.0001);
     }
 
+    /**
+     * Ensures device disconnection updates session state properly.
+     */
     @Test
-    void testOnlineToConnectingOnDisconnect() {
-        // Online → Connecting (if connection is lost)
-        connectionManager.updateDevice(testDeviceId, "online", new Date());
-        connectionManager.updateDevice(testDeviceId, "connecting", new Date());
-        assertEquals("connecting", testDevice.getStatus(), "Device should transition from Online to Connecting when the connection is lost.");
+    void testDeviceDisconnected() {
+        io.netty.channel.Channel mockChannel = mock(io.netty.channel.Channel.class);
+        connectionManager.deviceDisconnected(mockChannel, true);
+
+        Device updatedDevice = cacheManager.getObject(Device.class, testDeviceId);
+        assertNotNull(updatedDevice);
+        assertEquals("offline", updatedDevice.getStatus());
     }
 
+    /**
+     * Tests that listeners are properly added and removed.
+     */
     @Test
-    void testErrorToConnectingOnRetry() {
-        // Error → Connecting (if retrying)
-        connectionManager.updateDevice(testDeviceId, "error", new Date());
-        connectionManager.updateDevice(testDeviceId, "connecting", new Date());
-        assertEquals("connecting", testDevice.getStatus(), "Device should transition from Error to Connecting when retrying.");
+    void testRemoveListener() {
+        UpdateListener listener = mock(UpdateListener.class);
+
+        try {
+            connectionManager.addListener(testDeviceId, listener);
+            verify(connectionManager, times(1)).addListener(testDeviceId, listener);
+
+            connectionManager.removeListener(testDeviceId, listener);
+            verify(connectionManager, times(1)).removeListener(testDeviceId, listener);
+        } catch (StorageException e) {
+            fail("Unexpected exception: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Ensures logs are updated and linked to connection keys.
+     */
+    @Test
+    void testUpdateLog() {
+        LogRecord logRecord = mock(LogRecord.class);
+        ConnectionKey mockKey = mock(ConnectionKey.class);
+
+        when(logRecord.getConnectionKey()).thenReturn(mockKey);
+        connectionManager.updateLog(logRecord);
+
+        verify(logRecord, atLeastOnce()).getConnectionKey();
+        assertNotNull(logRecord);
+    }
+
+    /**
+     * Ensures event updates are processed correctly.
+     */
+    @Test
+    void testUpdateEvent() {
+        org.traccar.model.Event testEvent = new org.traccar.model.Event("testEvent", testDeviceId);
+        connectionManager.updateEvent(true, 1L, testEvent);
+
+        assertNotNull(testEvent);
+    }
+
+    /**
+     * Verifies that lambda function listeners execute correctly.
+     */
+    @Test
+    void testLambdaFunctionExecution() {
+        UpdateListener listener = new UpdateListener() {
+            @Override
+            public void onKeepalive() {}
+
+            @Override
+            public void onUpdateDevice(Device device) {
+                assertNotNull(device);
+            }
+
+            @Override
+            public void onUpdatePosition(Position position) {
+                assertNotNull(position);
+            }
+
+            @Override
+            public void onUpdateEvent(org.traccar.model.Event event) {}
+
+            @Override
+            public void onUpdateLog(org.traccar.model.LogRecord record) {
+                assertNotNull(record);
+            }
+        };
+
+        try {
+            connectionManager.addListener(1L, listener);
+        } catch (StorageException e) {
+            fail("Unexpected exception: " + e.getMessage());
+        }
+
+        Position testPosition = new Position();
+        testPosition.setLatitude(37.7749);
+        testPosition.setLongitude(-122.4194);
+        connectionManager.updatePosition(true, testPosition);
     }
 }

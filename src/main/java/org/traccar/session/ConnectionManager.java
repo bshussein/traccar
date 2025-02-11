@@ -363,6 +363,10 @@ public class ConnectionManager implements BroadcastInterface {
         }
     }
 
+    public Map<Object, Object> getListeners() {
+        return null;
+    }
+
     public interface UpdateListener {
         void onKeepalive();
         void onUpdateDevice(Device device);

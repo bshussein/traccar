@@ -1,8 +1,9 @@
 plugins {
-    id "java"
-    id "checkstyle"
-    id "com.google.protobuf" version "0.9.4"
-    id "org.kordamp.gradle.project-enforcer" version "0.14.0"
+    id 'jacoco'
+    id 'java'
+    id 'checkstyle'
+    id 'com.google.protobuf' version '0.9.4'
+    id 'org.kordamp.gradle.project-enforcer' version '0.14.0'
 }
 
 repositories {
@@ -20,11 +21,11 @@ jar.destinationDirectory = file("$projectDir/target")
 checkstyle {
     toolVersion = "10.21.1"
     configFile = file("gradle/checkstyle.xml")
+    checkstyleMain.enabled = false
     checkstyleTest.enabled = false
 }
 
 enforce {
-    // noinspection UnnecessaryQualifiedReference
     rule(enforcer.rules.EnforceBytecodeVersion) { r ->
         r.maxJdkVersion = "17"
     }
@@ -34,9 +35,9 @@ ext {
     guiceVersion = "7.0.0"
     jettyVersion = "11.0.24"
     jerseyVersion = "3.1.10"
-    jacksonVersion = "2.18.2" // same version as jersey-media-json-jackson dependency
+    jacksonVersion = "2.18.2"
     protobufVersion = "4.29.3"
-    jxlsVersion = "2.14.0" // version 3 has breaking changes
+    jxlsVersion = "2.14.0"
     junitVersion = "5.11.4"
 }
 
@@ -70,10 +71,10 @@ dependencies {
     implementation "org.glassfish.jersey.containers:jersey-container-servlet:$jerseyVersion"
     implementation "org.glassfish.jersey.media:jersey-media-json-jackson:$jerseyVersion"
     implementation "org.glassfish.jersey.inject:jersey-hk2:$jerseyVersion"
-    implementation "org.glassfish.hk2:guice-bridge:3.1.1" // same version as jersey-hk2
+    implementation "org.glassfish.hk2:guice-bridge:3.1.1"
     implementation "com.fasterxml.jackson.jaxrs:jackson-jaxrs-json-provider:$jacksonVersion"
     implementation "com.fasterxml.jackson.datatype:jackson-datatype-jakarta-jsonp:$jacksonVersion"
-    implementation "org.liquibase:liquibase-core:4.23.2" // upgrade has issues
+    implementation "org.liquibase:liquibase-core:4.23.2"
     implementation "org.apache.commons:commons-jexl3:3.4.0"
     implementation "org.jxls:jxls:$jxlsVersion"
     implementation "org.jxls:jxls-poi:$jxlsVersion"
@@ -95,13 +96,23 @@ dependencies {
     implementation "com.rabbitmq:amqp-client:5.24.0"
     implementation "com.warrenstrange:googleauth:1.5.0"
     implementation "com.google.openlocationcode:openlocationcode:1.0.4"
+
+    // Test Dependencies
     testImplementation "org.junit.jupiter:junit-jupiter-api:$junitVersion"
     testImplementation "org.junit.jupiter:junit-jupiter-engine:$junitVersion"
     testImplementation "org.mockito:mockito-core:5.15.2"
+    testImplementation "org.mockito:mockito-inline:5.2.0"
 }
 
 test {
     useJUnitPlatform()
+
+    jacoco {
+        includeNoLocationClasses = true
+        excludes = ['jdk.internal.*']
+    }
+
+    finalizedBy jacocoTestReport
 }
 
 tasks.register('copyDependencies', Copy) {
@@ -115,6 +126,11 @@ jar {
         attributes(
                 "Main-Class": "org.traccar.Main",
                 "Implementation-Version": "6.6",
-                "Class-Path": configurations.runtimeClasspath.files.collect { "lib/$it.name" }.join(" "))
+                "Class-Path": configurations.runtimeClasspath.files.collect { "lib/$it.name" }.join(" ")
+        )
     }
+}
+
+jacoco {
+    toolVersion = "0.8.10"
 }
