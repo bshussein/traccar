@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        java: [11, 17, 21]  # Run CI on multiple Java versions
+        java: [17, 21]  # Run CI on multiple Java versions
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
