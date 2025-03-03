@@ -90,6 +90,11 @@ public class NotificationManager {
 
         forwardEvent(event, position);
 
+        if (event.getEventTime() == null) {
+            LOGGER.warn("Skipping event with null event time: {}", event);
+            return;
+        }
+
         if (System.currentTimeMillis() - event.getEventTime().getTime() > timeThreshold) {
             LOGGER.info("Skipping notifications for old event");
             return;
